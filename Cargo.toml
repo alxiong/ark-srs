@@ -9,3 +9,9 @@ keywords = ["cryptography", "trusted setup", "zkSNARK", "CRS"]
 categories = ["cryptography"]
 
 [dependencies]
+anyhow = "1.0"
+ark-bn254 = "0.3.0"
+ark-ff = "0.3.0"
+ark-std = "0.3.0"
+ark-poly-commit = "0.3.0"
+ark-ec = "0.3.0"
