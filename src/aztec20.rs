@@ -1,10 +1,11 @@
 //! Aztec's MPC ignition ceremony, there are 100.8 million BN254 points
 //! generated. For concrete details: https://github.com/AztecProtocol/ignition-verification
+
 use anyhow::{bail, Result};
 use ark_bn254::{Bn254, Fq, Fq2, G1Affine, G2Affine};
 use ark_ec::AffineCurve;
 use ark_ff::{BigInteger256, PrimeField};
-use ark_poly_commit::kzg10::{self, UniversalParams};
+use ark_poly_commit::kzg10::{Powers, UniversalParams, VerifierKey};
 use ark_std::{
     collections::BTreeMap,
     format,
@@ -14,8 +15,8 @@ use ark_std::{
     vec::Vec,
 };
 
-const NUM_TRANSCRIPTS: usize = 1;
 const TRANSCRIPT_DIR: &'static str = "./data/aztec20";
+const NUM_TRANSCRIPTS: usize = 20;
 const NUM_G1_PER_TRANSCRIPT: usize = 5_040_000;
 const NUM_G2: usize = 2;
 const G1_STARTING_POS: u64 = 28; // pos of the first G1 points in transcript file
@@ -27,34 +28,32 @@ const NUM_BIGINT_PER_G2: usize = 4;
 /// This API is similar to [KZG10::setup][setup]
 ///
 /// [setup]: https://docs.rs/ark-poly-commit/0.3.0/ark_poly_commit/kzg10/struct.KZG10.html#method.setup
-pub fn get_crs(
-    max_degree: usize,
-    produce_g2_powers: bool,
-) -> Result<kzg10::UniversalParams<Bn254>> {
-    if max_degree < 1 {
-        bail!("Max degree has to be >= 1");
+pub fn kzg10_setup(
+    supported_degree: usize,
+) -> Result<(Powers<'static, Bn254>, VerifierKey<Bn254>)> {
+    if supported_degree < 1 || supported_degree > NUM_G1_PER_TRANSCRIPT * NUM_TRANSCRIPTS {
+        bail!("Max degree has to be between [1, 100.8 million].");
     }
 
     let mut powers_of_g = vec![G1Affine::prime_subgroup_generator()];
-    powers_of_g.extend_from_slice(&parse_g1_points(max_degree)?);
+    powers_of_g.extend_from_slice(&parse_g1_points(supported_degree)?);
 
-    // TODO: used for Marlin's PCS variant, see Marlin19 Appendix B
-    // currently not used for vanilla KZG.
+    // NOTE: used for hiding variant of KZG, not supported in Aztec's CRS.
     let powers_of_gamma_g = BTreeMap::new();
+    // NOTE: not supported in Aztec's CRS.
+    let neg_powers_of_h = BTreeMap::new();
 
-    let [h, beta_h] = parse_g2_points()?;
-
-    let neg_powers_of_h = if produce_g2_powers {
-        // TODO: add impl for this
-        BTreeMap::new()
-    } else {
-        BTreeMap::new()
-    };
-
+    let h = G2Affine::prime_subgroup_generator();
+    let [beta_h, _] = parse_g2_points()?;
     let prepared_h = h.into();
     let prepared_beta_h = beta_h.into();
 
-    let pp = UniversalParams {
+    let powers = Powers {
+        powers_of_g: ark_std::borrow::Cow::Owned(powers_of_g.clone()),
+        powers_of_gamma_g: ark_std::borrow::Cow::Owned(vec![]), // empty, not used
+    };
+
+    let pp: UniversalParams<Bn254> = UniversalParams {
         powers_of_g,
         powers_of_gamma_g,
         h,
@@ -63,8 +62,17 @@ pub fn get_crs(
         prepared_h,
         prepared_beta_h,
     };
-    Ok(pp)
-    // unimplemented!();
+
+    let vk = VerifierKey {
+        g: pp.powers_of_g[0],
+        gamma_g: ark_bn254::G1Affine::default(), // dummy gamma_g, not used
+        h: pp.h,
+        beta_h: pp.beta_h,
+        prepared_h: pp.prepared_h.clone(),
+        prepared_beta_h: pp.prepared_beta_h.clone(),
+    };
+
+    Ok((powers, vk))
 }
 
 // Returns x.[1], x^2.[1], ... , x^`bound`.[1] where `x` is toxic
@@ -81,10 +89,10 @@ fn parse_g1_points(bound: usize) -> Result<Vec<G1Affine>> {
         let mut f = File::open(format!("{}/transcript{:02}.dat", TRANSCRIPT_DIR, file_idx))?;
         g1_points.extend_from_slice(&parse_g1_points_from_file(&mut f, NUM_G1_PER_TRANSCRIPT)?);
     }
+
     let mut f = File::open(format!(
         "{}/transcript{:02}.dat",
-        TRANSCRIPT_DIR,
-        num_full_transcript + 1
+        TRANSCRIPT_DIR, num_full_transcript
     ))?;
     g1_points.extend_from_slice(&parse_g1_points_from_file(&mut f, remainder_num_points)?);
 
@@ -106,6 +114,9 @@ fn parse_g1_points_from_file(f: &mut File, num_points: usize) -> Result<Vec<G1Af
         let mut bigints_repr = [[0u64; 4]; NUM_BIGINT_PER_G1];
         for j in 0..NUM_BIGINT_PER_G1 {
             for k in 0..4 {
+                // size of G1 is 64
+                // size of a bigint is 32 bytes.
+                // size of u64 is 8 bytes.
                 f.seek(SeekFrom::Start(
                     G1_STARTING_POS + i as u64 * 64 + j as u64 * 32 + k * 8,
                 ))?;
@@ -120,7 +131,9 @@ fn parse_g1_points_from_file(f: &mut File, num_points: usize) -> Result<Vec<G1Af
         let y = Fq::from_repr(BigInteger256::new(bigints_repr[1]))
             .expect("Failed to parse G1 point's y-coordinate");
 
-        g1_points.push(G1Affine::new(x, y, false));
+        let point = G1Affine::new(x, y, false);
+        assert!(point.is_on_curve());
+        g1_points.push(point);
     }
     Ok(g1_points)
 }
@@ -128,6 +141,8 @@ fn parse_g1_points_from_file(f: &mut File, num_points: usize) -> Result<Vec<G1Af
 // Parse G2Affine points from CRS
 // Concrete format spec:
 // https://github.com/AztecProtocol/ignition-verification/blob/master/Transcript_spec.md#structure-of-a-transcript-file
+// NOTE: the second G2 point is not used in CRS, but only for transcript
+// verification purposes.
 fn parse_g2_points() -> Result<[G2Affine; NUM_G2]> {
     let mut g2_points = [G2Affine::default(); NUM_G2];
 
@@ -139,7 +154,7 @@ fn parse_g2_points() -> Result<[G2Affine; NUM_G2]> {
 
         for j in 0..NUM_BIGINT_PER_G2 {
             for k in 0..4 {
-                // size of G1 is
+                // size of G1 is 64
                 // size of G2 is 128 bytes (4 * 32).
                 // size of a bigint is 32 bytes.
                 // size of u64 is 8 bytes.
@@ -166,13 +181,102 @@ fn parse_g2_points() -> Result<[G2Affine; NUM_G2]> {
         let x = Fq2::new(x_c0, x_c1);
         let y = Fq2::new(y_c0, y_c1);
 
-        g2_points[i] = G2Affine::new(x, y, false);
+        let point = G2Affine::new(x, y, false);
+        assert!(point.is_on_curve());
+        g2_points[i] = point;
     }
 
     Ok(g2_points)
 }
 
-#[test]
-fn test_aztec_crs() {
-    // TODO: add test
+#[cfg(test)]
+mod test {
+    use super::*;
+    use ark_ec::{msm::VariableBaseMSM, PairingEngine, ProjectiveCurve};
+    use ark_ff::UniformRand;
+    use ark_poly::{univariate::DensePolynomial, Polynomial};
+    use ark_poly_commit::{
+        kzg10::{Powers, Proof, Randomness, KZG10},
+        PCRandomness, UVPolynomial,
+    };
+    use ark_std::ops::Div;
+
+    // simplify from arkworks' poly-commit
+    pub fn open<'c, E, P>(
+        powers: &Powers<E>,
+        p: &P,
+        point: P::Point,
+        rand: &Randomness<E::Fr, P>,
+    ) -> Result<Proof<E>>
+    where
+        E: PairingEngine,
+        P: UVPolynomial<E::Fr, Point = E::Fr>,
+        for<'a, 'b> &'a P: Div<&'b P, Output = P>,
+    {
+        // check_degree_is_too_large()
+        let degree = p.degree();
+        let num_coefficients = degree + 1;
+        if num_coefficients > powers.size() {
+            bail!("Too many coefficients");
+        }
+
+        assert_eq!(rand, &Randomness::empty());
+        let (witness_poly, _hiding_witness_poly) =
+            KZG10::<E, P>::compute_witness_polynomial(p, point, rand)?;
+
+        // adapated from `open_with_witness_polynomial()`
+        let (num_leading_zeros, witness_coeffs) =
+            skip_leading_zeros_and_convert_to_bigints(&witness_poly);
+
+        let w = VariableBaseMSM::multi_scalar_mul(
+            &powers.powers_of_g[num_leading_zeros..],
+            &witness_coeffs,
+        );
+        Ok(Proof {
+            w: w.into_affine(),
+            random_v: None,
+        })
+    }
+
+    fn skip_leading_zeros_and_convert_to_bigints<F: PrimeField, P: UVPolynomial<F>>(
+        p: &P,
+    ) -> (usize, Vec<F::BigInt>) {
+        let mut num_leading_zeros = 0;
+        while num_leading_zeros < p.coeffs().len() && p.coeffs()[num_leading_zeros].is_zero() {
+            num_leading_zeros += 1;
+        }
+        let coeffs = ark_std::cfg_iter!(&p.coeffs()[num_leading_zeros..])
+            .map(|s| s.into_repr())
+            .collect::<Vec<_>>();
+        (num_leading_zeros, coeffs)
+    }
+
+    #[test]
+    fn test_aztec_crs() -> Result<()> {
+        let rng = &mut ark_std::test_rng();
+
+        // adapted from https://github.com/arkworks-rs/poly-commit
+        for _ in 0..10 {
+            let mut degree = 0;
+            while degree <= 1 {
+                degree = usize::rand(rng) % 2usize.pow(16);
+            }
+            let (ck, vk) = kzg10_setup(degree)?;
+            let p: DensePolynomial<ark_bn254::Fr> = UVPolynomial::rand(degree, rng);
+            let (comm, rand) = KZG10::commit(&ck, &p, None, None)?;
+            let point = ark_bn254::Fr::rand(rng);
+            let value = p.evaluate(&point);
+            let proof = open(&ck, &p, point, &rand)?;
+            assert!(
+                KZG10::<ark_bn254::Bn254, DensePolynomial<ark_bn254::Fr>>::check(
+                    &vk, &comm, point, value, &proof
+                )?,
+                "proof was incorrect for max_degree = {}, polynomial_degree = {}",
+                degree,
+                p.degree(),
+            );
+        }
+
+        Ok(())
+    }
 }

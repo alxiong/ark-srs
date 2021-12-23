@@ -15,3 +15,6 @@ ark-ff = "0.3.0"
 ark-std = "0.3.0"
 ark-poly-commit = "0.3.0"
 ark-ec = "0.3.0"
+
+[dev-dependencies]
+ark-poly = "0.3.0"
