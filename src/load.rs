@@ -72,7 +72,7 @@ pub mod kzg10 {
 
             let target_degree = SUPPORTED_DEGREES
                 .iter()
-                .filter(|&x| x > &degree)
+                .filter(|&x| x >= &degree)
                 .min()
                 .unwrap(); // shouldn't panic
 
