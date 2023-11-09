@@ -11,10 +11,18 @@ categories = ["cryptography"]
 [dependencies]
 anyhow = "1.0"
 ark-bn254 = "0.4.0"
-ark-ff = "0.4.2"
-ark-std = "0.4.0"
-ark-poly-commit = "0.4.0"
 ark-ec = "0.4.2"
+ark-ff = "0.4.2"
+ark-poly-commit = "0.4.0"
+ark-serialize = "0.4.2"
+ark-std = "0.4.0"
 
 [dev-dependencies]
 ark-poly = "0.4.2"
+
+[features]
+std = []
+
+[[bin]]
+name = "save-aztec-srs"
+path = "src/bin/save_aztec_srs.rs"

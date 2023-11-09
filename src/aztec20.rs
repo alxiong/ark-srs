@@ -15,6 +15,8 @@ use ark_std::{
     vec::Vec,
 };
 
+use crate::load;
+
 const TRANSCRIPT_DIR: &str = "./data/aztec20";
 const NUM_TRANSCRIPTS: usize = 20;
 const NUM_G1_PER_TRANSCRIPT: usize = 5_040_000;
@@ -31,6 +33,13 @@ const NUM_BIGINT_PER_G2: usize = 4;
 pub fn kzg10_setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
     if !(1..=NUM_G1_PER_TRANSCRIPT * NUM_TRANSCRIPTS).contains(&supported_degree) {
         bail!("Max degree has to be between [1, 100.8 million].");
+    }
+
+    // if the degree is below 2^17, directly parse from precomputed binary files
+    // instead of fetching from aztec's original transcript file for much lower
+    // memory usage and faster parsing speed.
+    if &supported_degree <= load::kzg10::bn254::SUPPORTED_DEGREES.iter().max().unwrap() {
+        return load::kzg10::bn254::load_aztec_srs(supported_degree, None);
     }
 
     let mut powers_of_g = vec![G1Affine::generator()];
