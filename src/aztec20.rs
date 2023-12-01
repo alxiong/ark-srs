@@ -35,11 +35,12 @@ pub fn kzg10_setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
         bail!("Max degree has to be between [1, 100.8 million].");
     }
 
-    // if the degree is below 2^17, directly parse from precomputed binary files
-    // instead of fetching from aztec's original transcript file for much lower
-    // memory usage and faster parsing speed.
-    if &supported_degree <= load::kzg10::bn254::SUPPORTED_DEGREES.iter().max().unwrap() {
-        return load::kzg10::bn254::load_aztec_srs(supported_degree, None);
+    // first try to load from precomputed/serialized binary files, if failed, then
+    // proceed to use the original transcript which is much larger and slower to
+    // parse.
+    let pp = load::kzg10::bn254::load_aztec_srs(supported_degree, None);
+    if pp.is_ok() {
+        return pp;
     }
 
     let mut powers_of_g = vec![G1Affine::generator()];

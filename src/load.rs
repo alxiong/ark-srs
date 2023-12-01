@@ -49,33 +49,17 @@ pub mod kzg10 {
         use crate::aztec20;
 
         use super::*;
-        use anyhow::anyhow;
         use ark_bn254::Bn254;
 
         /// supported degrees to load from pre-serialized parameter files.
         pub const SUPPORTED_DEGREES: [usize; 4] = [32, 1024, 32768, 131072];
 
-        /// Load SRS from Aztec's ignition ceremony from files, we support size:
-        /// `[2^5, 2^10, 2^15, 2^17]`, these are loaded faster than Aztec's
-        /// transcript.
-        ///
-        /// This function supports any `degree<=2^17`.
+        /// Load SRS from Aztec's ignition ceremony from files.
         pub fn load_aztec_srs(
             degree: usize,
             src: Option<PathBuf>,
         ) -> Result<kzg10::UniversalParams<Bn254>> {
-            if degree as u64 > 2u64.pow(17) {
-                return Err(anyhow!(
-                    "Large degree, please use `crs::aztec20::kzg10_setup()` instead!"
-                ));
-            }
-
-            let target_degree = SUPPORTED_DEGREES
-                .iter()
-                .filter(|&x| x >= &degree)
-                .min()
-                .unwrap(); // shouldn't panic
-
+            let target_degree = degree.next_power_of_two();
             let src = match src {
                 Some(s) => s,
                 None => {
