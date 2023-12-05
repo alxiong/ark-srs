@@ -16,6 +16,7 @@ pub(crate) fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Resul
 }
 
 /// load any deserializable data into memory
+#[allow(dead_code)]
 pub(crate) fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     let f = File::open(src)?;
     // maximum 8 KB of buffer for memory exhaustion protection for malicious file
@@ -51,26 +52,21 @@ pub mod kzg10 {
         use super::*;
         use ark_bn254::Bn254;
 
-        /// supported degrees to load from pre-serialized parameter files.
-        pub const SUPPORTED_DEGREES: [usize; 4] = [32, 1024, 32768, 131072];
+        /// max supported degree to load from pre-serialized parameter files.
+        pub const MAX_SUPPORTED_DEGREE: usize = 1048576;
 
         /// Load SRS from Aztec's ignition ceremony from files.
-        pub fn load_aztec_srs(
-            degree: usize,
-            src: Option<PathBuf>,
-        ) -> Result<kzg10::UniversalParams<Bn254>> {
+        pub fn load_aztec_srs(degree: usize) -> Result<kzg10::UniversalParams<Bn254>> {
             let target_degree = degree.next_power_of_two();
-            let src = match src {
-                Some(s) => s,
-                None => {
-                    let mut path = get_project_root()?;
-                    path.push("data");
-                    path.push(format!("kzg10-bn254-aztec-srs-{}", target_degree));
-                    path.set_extension("bin");
-                    path
-                },
-            };
-            let mut srs: kzg10::UniversalParams<Bn254> = load_data(src)?;
+            let mut srs;
+            if target_degree > MAX_SUPPORTED_DEGREE {
+                return Err(anyhow!("Too large for cached SRS files"));
+            } else {
+                let bytes = include_bytes!("../data/aztec20/kzg10-bn254-aztec-srs-1048576.bin");
+                srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
+                    &bytes[..],
+                )?;
+            }
 
             // trim the srs to fit the actual requested degree
             srs.powers_of_g.truncate(degree + 1);
@@ -79,26 +75,24 @@ pub mod kzg10 {
 
         /// Store SRS into files into `dest` directory
         pub fn store_aztec_srs(dest: Option<PathBuf>) -> Result<()> {
-            let max_degree = *SUPPORTED_DEGREES.iter().max().unwrap();
-            let srs = aztec20::kzg10_setup(max_degree)?;
+            let srs = aztec20::kzg10_setup(MAX_SUPPORTED_DEGREE)?;
 
-            for degree in SUPPORTED_DEGREES {
-                let mut trim_srs = srs.clone();
-                trim_srs.powers_of_g.truncate(degree + 1);
+            let mut trim_srs = srs.clone();
+            trim_srs.powers_of_g.truncate(MAX_SUPPORTED_DEGREE + 1);
 
-                let dest = match dest {
-                    Some(ref d) => d.clone(),
-                    None => {
-                        let mut path = get_project_root()?;
-                        path.push("data");
-                        path.push(format!("kzg10-bn254-aztec-srs-{}", degree));
-                        path.set_extension("bin");
-                        path
-                    },
-                };
+            let dest = match dest {
+                Some(ref d) => d.clone(),
+                None => {
+                    let mut path = get_project_root()?;
+                    path.push("data");
+                    path.push("aztec20");
+                    path.push(format!("kzg10-bn254-aztec-srs-{}", MAX_SUPPORTED_DEGREE));
+                    path.set_extension("bin");
+                    path
+                },
+            };
 
-                store_data(trim_srs, dest)?;
-            }
+            store_data(trim_srs, dest)?;
             Ok(())
         }
     }

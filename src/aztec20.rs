@@ -38,7 +38,7 @@ pub fn kzg10_setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
     // first try to load from precomputed/serialized binary files, if failed, then
     // proceed to use the original transcript which is much larger and slower to
     // parse.
-    let pp = load::kzg10::bn254::load_aztec_srs(supported_degree, None);
+    let pp = load::kzg10::bn254::load_aztec_srs(supported_degree);
     if pp.is_ok() {
         return pp;
     }
