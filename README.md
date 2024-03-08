@@ -1,6 +1,6 @@
-# crs
+# `ark-srs`
 
-Use Common/Structured Reference String (CRS/SRS) from existing ceremonies with ease
+Use Common/Structured Reference String (CRS/SRS) from existing ceremonies with ease with arkworks types.
 
 **WARNING: This is work in progress, none of the code has been audited. The library is NOT ready for production.**
 
@@ -16,11 +16,11 @@ Use Common/Structured Reference String (CRS/SRS) from existing ceremonies with e
 ```rust
 use ark_bn254::Bn254;
 use ark_poly::univariate::DenseUVPolynomial;
-use crs;
+use ark_srs;
 
 // simulated CRS (for test only)
 let pp = KZG10::<Bn254, DenseUVPolynomial<<Bn254 as PairingEngine>::Fr>>::setup(max_degree, false, &mut rng)?;
 
 // now, use Aztec's CRS
-let pp = crs::aztec20::kzg10_setup(supported_degree)?;
+let pp = ark_srs::aztec20::kzg10_setup(supported_degree)?;
 ```
