@@ -1,12 +1,16 @@
 [package]
-name = "crs"
+name = "ark-srs"
 version = "0.1.0"
 description = "A utility crate that simplifies reuse of Common/Structured Reference String (CRS/SRS) from past trusted setup ceremonies, especially for SNARK"
 authors = ["Alex Xiong <alex.xiong.tech@gmail.com>"]
-edition = "2018"
-repository = "https://github.com/alxiong/crs"
-keywords = ["cryptography", "trusted setup", "zkSNARK", "CRS"]
+edition = "2021"
+repository = "https://github.com/alxiong/ark-srs"
+homepage = "https://github.com/alxiong/ark-srs"
+documentation = "https://docs.rs/ark-srs"
+readme = "README.md"
+keywords = ["cryptography", "trusted setup", "zkSNARK", "SRS"]
 categories = ["cryptography"]
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
