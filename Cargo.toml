@@ -8,7 +8,7 @@ repository = "https://github.com/alxiong/ark-srs"
 homepage = "https://github.com/alxiong/ark-srs"
 documentation = "https://docs.rs/ark-srs"
 readme = "README.md"
-keywords = ["cryptography", "trusted setup", "zkSNARK", "SRS"]
+keywords = ["cryptography", "trusted-setup", "zksnark", "SRS"]
 categories = ["cryptography"]
 license = "MIT"
 exclude = [
@@ -28,7 +28,9 @@ ark-poly = "0.4.2"
 
 [features]
 std = []
+kzg-aztec = []
 
 [[bin]]
 name = "save-aztec-srs"
 path = "src/bin/save_aztec_srs.rs"
+required-features = ["kzg-aztec"]

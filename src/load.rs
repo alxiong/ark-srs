@@ -1,6 +1,7 @@
 //! Utils for persisting serialized data to files and loading them into memroy.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
+#![allow(unused_imports)]
 use std::{env, fs::File, io::BufReader, path::PathBuf};
 
 use alloc::{format, vec::Vec};
@@ -47,51 +48,55 @@ pub mod kzg10 {
 
     /// ceremonies for curve [Bn254][https://docs.rs/ark-bn254/latest/ark_bn254/]
     pub mod bn254 {
-        use crate::aztec20;
-
         use super::*;
         use ark_bn254::Bn254;
 
-        /// max supported degree to load from pre-serialized parameter files.
-        pub const MAX_SUPPORTED_DEGREE: usize = 1_048_600;
+        #[cfg(feature = "kzg-aztec")]
+        /// Aztec2020 KZG setup
+        pub mod aztec {
+            use super::*;
+            /// max supported degree to load from pre-serialized parameter
+            /// files.
+            pub const MAX_SUPPORTED_DEGREE: usize = 1_048_600;
 
-        /// Load SRS from Aztec's ignition ceremony from files.
-        pub fn load_aztec_srs(degree: usize) -> Result<kzg10::UniversalParams<Bn254>> {
-            let mut srs;
-            if degree > MAX_SUPPORTED_DEGREE {
-                return Err(anyhow!("Too large for cached SRS files"));
-            } else {
-                let bytes = include_bytes!("../data/aztec20/kzg10-bn254-aztec-srs-1048600.bin");
-                srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
-                    &bytes[..],
-                )?;
+            /// Load SRS from Aztec's ignition ceremony from files.
+            pub fn load_aztec_srs(degree: usize) -> Result<kzg10::UniversalParams<Bn254>> {
+                let mut srs;
+                if degree > MAX_SUPPORTED_DEGREE {
+                    return Err(anyhow!("Too large for cached SRS files"));
+                } else {
+                    let bytes = include_bytes!("../data/aztec20/kzg10-bn254-aztec-srs-1048600.bin");
+                    srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
+                        &bytes[..],
+                    )?;
+                }
+
+                // trim the srs to fit the actual requested degree
+                srs.powers_of_g.truncate(degree + 1);
+                Ok(srs)
             }
 
-            // trim the srs to fit the actual requested degree
-            srs.powers_of_g.truncate(degree + 1);
-            Ok(srs)
-        }
+            /// Store SRS into files into `dest` directory
+            pub fn store_aztec_srs(dest: Option<PathBuf>) -> Result<()> {
+                let mut srs = crate::aztec20::kzg10_setup(MAX_SUPPORTED_DEGREE)?;
 
-        /// Store SRS into files into `dest` directory
-        pub fn store_aztec_srs(dest: Option<PathBuf>) -> Result<()> {
-            let mut srs = aztec20::kzg10_setup(MAX_SUPPORTED_DEGREE)?;
+                srs.powers_of_g.truncate(MAX_SUPPORTED_DEGREE + 1);
 
-            srs.powers_of_g.truncate(MAX_SUPPORTED_DEGREE + 1);
+                let dest = match dest {
+                    Some(ref d) => d.clone(),
+                    None => {
+                        let mut path = get_project_root()?;
+                        path.push("data");
+                        path.push("aztec20");
+                        path.push(format!("kzg10-bn254-aztec-srs-{}", MAX_SUPPORTED_DEGREE));
+                        path.set_extension("bin");
+                        path
+                    },
+                };
 
-            let dest = match dest {
-                Some(ref d) => d.clone(),
-                None => {
-                    let mut path = get_project_root()?;
-                    path.push("data");
-                    path.push("aztec20");
-                    path.push(format!("kzg10-bn254-aztec-srs-{}", MAX_SUPPORTED_DEGREE));
-                    path.set_extension("bin");
-                    path
-                },
-            };
-
-            store_data(srs, dest)?;
-            Ok(())
+                store_data(srs, dest)?;
+                Ok(())
+            }
         }
     }
 }

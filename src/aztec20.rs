@@ -15,7 +15,7 @@ use ark_std::{
     vec::Vec,
 };
 
-use crate::load;
+use crate::load::kzg10::bn254::aztec::load_aztec_srs;
 
 const TRANSCRIPT_DIR: &str = "./data/aztec20";
 const NUM_TRANSCRIPTS: usize = 20;
@@ -38,7 +38,7 @@ pub fn kzg10_setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
     // first try to load from precomputed/serialized binary files, if failed, then
     // proceed to use the original transcript which is much larger and slower to
     // parse.
-    let pp = load::kzg10::bn254::load_aztec_srs(supported_degree);
+    let pp = load_aztec_srs(supported_degree);
     if pp.is_ok() {
         return pp;
     }
