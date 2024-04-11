@@ -1,15 +1,15 @@
 //! Utils for persisting serialized data to files and loading them into memroy.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
-#![allow(unused_imports)]
-use std::{env, fs::File, io::BufReader, path::PathBuf};
-
 use alloc::{format, vec::Vec};
 use anyhow::{anyhow, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
+use hex_literal::hex;
+use sha2::{Digest, Sha256};
+use std::{env, fs::File, io::BufReader, path::PathBuf};
 
 /// store any serializable data into `dest`.
-pub(crate) fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
+pub fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
     let mut f = File::create(dest)?;
     let mut bytes = Vec::new();
     data.serialize_uncompressed(&mut bytes)?;
@@ -17,8 +17,7 @@ pub(crate) fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Resul
 }
 
 /// load any deserializable data into memory
-#[allow(dead_code)]
-pub(crate) fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
+pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     let f = File::open(src)?;
     // maximum 8 KB of buffer for memory exhaustion protection for malicious file
     let mut reader = BufReader::with_capacity(8000, f);
@@ -29,7 +28,7 @@ pub(crate) fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
 }
 
 /// return the directory containing the Cargo.toml (i.e. current project root)
-pub(crate) fn get_project_root() -> Result<PathBuf> {
+pub fn get_project_root() -> Result<PathBuf> {
     let mut path = env::current_exe()?;
     // move up one level and start searching for `Cargo.toml` file
     path.pop();
@@ -51,51 +50,51 @@ pub mod kzg10 {
         use super::*;
         use ark_bn254::Bn254;
 
-        #[cfg(feature = "kzg-aztec")]
         /// Aztec2020 KZG setup
         pub mod aztec {
             use super::*;
-            /// max supported degree to load from pre-serialized parameter
-            /// files.
-            pub const MAX_SUPPORTED_DEGREE: usize = 1_048_600;
+
+            /// Returns the default path for pre-serialized param files
+            pub fn default_path(degree: usize) -> Result<PathBuf> {
+                let mut path = get_project_root()?;
+                path.push("data");
+                path.push("aztec20");
+                path.push(format!("kzg10-aztec20-srs-{}", degree));
+                path.set_extension("bin");
+                Ok(path)
+            }
 
             /// Load SRS from Aztec's ignition ceremony from files.
-            pub fn load_aztec_srs(degree: usize) -> Result<kzg10::UniversalParams<Bn254>> {
-                let mut srs;
-                if degree > MAX_SUPPORTED_DEGREE {
-                    return Err(anyhow!("Too large for cached SRS files"));
-                } else {
-                    let bytes = include_bytes!("../data/aztec20/kzg10-bn254-aztec-srs-1048600.bin");
-                    srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
-                        &bytes[..],
-                    )?;
+            ///
+            /// # Note
+            /// we force specifying a `src` (instead of taking in `Option`) in
+            /// case the param files contains much more than `degree` needed.
+            /// And we want to avoid unnecessarily complicated logic for
+            /// iterating through all parameter files and find the smallest
+            /// param files that's bigger than the degree requested.
+            pub fn load_aztec_srs(
+                degree: usize,
+                src: PathBuf,
+            ) -> Result<kzg10::UniversalParams<Bn254>> {
+                let mut f = File::open(&src).map_err(|_| anyhow!("{} not found", src.display()))?;
+
+                let mut bytes = Vec::new();
+                f.read_to_end(&mut bytes)?;
+
+                let checksum: [u8; 32] = Sha256::digest(&bytes).into();
+                if checksum
+                    != hex!("0e2a5fb1d9102ee5b06723472b23f4f29f938712251a7b5b75eed4df4049871c")
+                {
+                    return Err(anyhow!("checksum mismatched!"));
                 }
+
+                let mut srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
+                    &bytes[..],
+                )?;
 
                 // trim the srs to fit the actual requested degree
                 srs.powers_of_g.truncate(degree + 1);
                 Ok(srs)
-            }
-
-            /// Store SRS into files into `dest` directory
-            pub fn store_aztec_srs(dest: Option<PathBuf>) -> Result<()> {
-                let mut srs = crate::aztec20::kzg10_setup(MAX_SUPPORTED_DEGREE)?;
-
-                srs.powers_of_g.truncate(MAX_SUPPORTED_DEGREE + 1);
-
-                let dest = match dest {
-                    Some(ref d) => d.clone(),
-                    None => {
-                        let mut path = get_project_root()?;
-                        path.push("data");
-                        path.push("aztec20");
-                        path.push(format!("kzg10-bn254-aztec-srs-{}", MAX_SUPPORTED_DEGREE));
-                        path.set_extension("bin");
-                        path
-                    },
-                };
-
-                store_data(srs, dest)?;
-                Ok(())
             }
         }
     }

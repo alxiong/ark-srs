@@ -8,3 +8,7 @@
 # Aux
 .DS_Store
 .log/
+
+**/*.bin
+# this one is small 1MB and used in tests
+!data/aztec20/kzg10-aztec20-srs-1024.bin
