@@ -3,8 +3,8 @@
 #![deny(missing_docs)]
 #![no_std]
 
-#[cfg(feature = "kzg-aztec")]
-pub mod aztec20;
+pub mod constants;
+pub mod kzg10;
 pub mod load;
 
 extern crate alloc;

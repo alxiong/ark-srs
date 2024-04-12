@@ -1,6 +1,6 @@
 [package]
 name = "ark-srs"
-version = "0.1.0"
+version = "0.2.0"
 description = "A utility crate that simplifies reuse of Common/Structured Reference String (CRS/SRS) from past trusted setup ceremonies, especially for SNARK"
 authors = ["Alex Xiong <alex.xiong.tech@gmail.com>"]
 edition = "2021"
@@ -22,15 +22,16 @@ ark-ff = "0.4.2"
 ark-poly-commit = "0.4.0"
 ark-serialize = "0.4.2"
 ark-std = "0.4.0"
+hex-literal = "0.4.1"
+sha2 = "0.10.8"
 
 [dev-dependencies]
 ark-poly = "0.4.2"
+dotenv = "0.15.0"
 
 [features]
 std = []
-kzg-aztec = []
 
 [[bin]]
 name = "save-aztec-srs"
 path = "src/bin/save_aztec_srs.rs"
-required-features = ["kzg-aztec"]
