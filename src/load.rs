@@ -4,7 +4,6 @@
 use alloc::{format, vec::Vec};
 use anyhow::{anyhow, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
-use hex_literal::hex;
 use sha2::{Digest, Sha256};
 use std::{env, fs::File, io::BufReader, path::PathBuf};
 
@@ -52,6 +51,8 @@ pub mod kzg10 {
 
         /// Aztec2020 KZG setup
         pub mod aztec {
+            use crate::constants::AZTEC20_CHECKSUMS;
+
             use super::*;
 
             /// Returns the default path for pre-serialized param files
@@ -77,13 +78,26 @@ pub mod kzg10 {
                 src: PathBuf,
             ) -> Result<kzg10::UniversalParams<Bn254>> {
                 let mut f = File::open(&src).map_err(|_| anyhow!("{} not found", src.display()))?;
+                // the max degree of the param file supported, parsed from file name
+                // getting the 1024 out of `data/aztec20/kzg10-aztec20-srs-1024.bin`
+                let f_degree = src
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .rsplit_once('-')
+                    .expect("unconventional filename")
+                    .1
+                    .parse::<usize>()
+                    .expect("fail to parse to uint");
 
                 let mut bytes = Vec::new();
                 f.read_to_end(&mut bytes)?;
 
                 let checksum: [u8; 32] = Sha256::digest(&bytes).into();
-                if checksum
-                    != hex!("0e2a5fb1d9102ee5b06723472b23f4f29f938712251a7b5b75eed4df4049871c")
+                if !AZTEC20_CHECKSUMS
+                    .iter()
+                    .any(|(d, cksum)| *d == f_degree && checksum == *cksum)
                 {
                     return Err(anyhow!("checksum mismatched!"));
                 }

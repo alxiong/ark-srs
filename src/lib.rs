@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 #![no_std]
 
-pub(crate) mod constants;
+pub mod constants;
 pub mod kzg10;
 pub mod load;
 
