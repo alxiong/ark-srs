@@ -9,7 +9,7 @@ Use Common/Structured Reference String (CRS/SRS) from existing ceremonies with e
 - Aztec's ignition: `./scripts/download_transcripts_aztec.sh NUM` where `NUM` can be `0..19` (`NUM=2` means download transcript `0, 1, 2`)
   - 100.8 million BN254 G1 points in total, split up into 20 files, each transcript file contains ~5 million points (~307 MB in size)
   - 2 BN254 G2 points are in the first transcript file
-  - **If you only need `degree<=1,048,584`**, you will be directly using one of cached binary files in [Released Assets](https://github.com/alxiong/ark-srs/releases) (or copy [scripts/download_srs_aztec.sh](./scripts/download_srs_aztec.sh) and run it to download).
+  - **If you only need `degree<=1,048,584`**, you will be directly using one of cached binary files in [Released Assets](https://github.com/alxiong/ark-srs/releases) (or copy [scripts/download_srs_aztec.sh](./scripts/download_srs_aztec.sh) and run it to download and make sure you have [`gh` CLI](https://cli.github.com/) installed).
 
 ## Usage
 

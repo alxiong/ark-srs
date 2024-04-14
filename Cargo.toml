@@ -12,7 +12,8 @@ keywords = ["cryptography", "trusted-setup", "zksnark", "SRS"]
 categories = ["cryptography"]
 license = "MIT"
 exclude = [
-    "*.bin"
+    "*.bin",
+    "scripts/*",
 ]
 [dependencies]
 anyhow = "1.0"
