@@ -2,7 +2,10 @@
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
 use alloc::{
-    borrow::ToOwned, format, string::{String, ToString}, vec::Vec
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec::Vec,
 };
 use anyhow::{anyhow, Context, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
@@ -14,8 +17,6 @@ use std::{
     io::BufReader,
     path::{Path, PathBuf},
 };
-
-use self::kzg10::bn254::aztec::degree_to_basename;
 
 /// store any serializable data into `dest`.
 pub fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
@@ -37,13 +38,12 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
 }
 
 /// Download srs file and save to disk
-pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
+pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
     // Ensure download directory exists
     create_dir_all(dest.as_ref().parent().context("no parent dir")?)
         .context("Unable to create directory")?;
 
     let version = "0.2.0"; // TODO infer or make configurable
-    let basename = degree_to_basename(degree);
     let url = format!(
         "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
     );

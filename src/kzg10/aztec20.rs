@@ -22,7 +22,7 @@ use crate::{
     constants::AZTEC20_DIR,
     load::{
         download_srs_file,
-        kzg10::bn254::aztec::{default_path, load_aztec_srs},
+        kzg10::bn254::aztec::{default_path, degree_to_basename, load_aztec_srs},
     },
 };
 
@@ -72,7 +72,8 @@ fn setup_helper(supported_degree: usize, param_file: PathBuf) -> Result<Universa
     // Download SRS file if it doesn't exist
     if !param_file.exists() {
         tracing::info!("SRS file {param_file:?} does not exist, will download");
-        download_srs_file(supported_degree, &param_file).expect("Failed to download SRS file.")
+        download_srs_file(&degree_to_basename(supported_degree), &param_file)
+            .expect("Failed to download SRS file.")
     }
     match load_aztec_srs(supported_degree, param_file) {
         Ok(pp) => Ok(pp),
