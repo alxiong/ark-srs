@@ -54,7 +54,7 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
     // because the concurrent operations would happen on different files and the
     // destination file should never be in an incomplete state.
     let mut temp_path = dest.as_ref().as_os_str().to_owned();
-    let suffix: String = ark_std::test_rng()
+    let suffix: String = rand::thread_rng()
         .sample_iter(&Alphanumeric)
         .take(16)
         .map(char::from)
