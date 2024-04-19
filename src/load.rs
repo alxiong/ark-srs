@@ -51,7 +51,8 @@ pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
         "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
     );
     tracing::info!("Downloading SRS from {url}");
-    let resp = reqwest::blocking::get(url)?;
+    let mut buf: Vec<u8> = Vec::new();
+    ureq::get(&url).call()?.into_reader().read_to_end(&mut buf)?;
 
     // Download to a temporary file and rename to dest on completion. This
     // should prevent some errors if this function is called concurrently
@@ -66,7 +67,7 @@ pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
     temp_path.push(format!(".temp.{suffix}"));
     {
         let mut f = File::create(&temp_path)?;
-        f.write_all(&resp.bytes()?)?;
+        f.write_all(&buf)?;
     }
     std::fs::rename(temp_path, dest.as_ref())?;
     tracing::info!("Saved SRS to {:?}", dest.as_ref());
