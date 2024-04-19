@@ -75,10 +75,8 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
                     Some(d) => *d,
                     None => bail!("Pre-serialized supported degrees: {:?}", supported),
                 };
-
-            let path = default_path(None, next_higher_degree)?;
-            tracing::info!("Using {}", path.display());
-            path
+            tracing::info!("Requested degree {supported_degree} using next higher available degree {next_higher_degree}");
+            default_path(None, next_higher_degree)?
         },
     };
     setup_helper(supported_degree, param_file)
@@ -90,7 +88,7 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
 fn setup_helper(supported_degree: usize, param_file: PathBuf) -> Result<UniversalParams<Bn254>> {
     // Download SRS file if it doesn't exist
     if !param_file.exists() {
-        tracing::info!("SRS file {param_file:?} does not exist, will download");
+        tracing::info!("SRS file {param_file:?} does not exist");
         download_srs_file(
             param_file
                 .file_name()
