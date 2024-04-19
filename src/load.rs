@@ -47,6 +47,7 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
     let url = format!(
         "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
     );
+    tracing::info!("Downloading SRS from {url}");
     let resp = reqwest::blocking::get(url)?;
 
     // Download to a temporary file and rename to dest on completion. This
@@ -64,7 +65,9 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
         let mut f = File::create(&temp_path)?;
         f.write_all(&resp.bytes()?)?;
     }
-    Ok(std::fs::rename(temp_path, dest.as_ref())?)
+    std::fs::rename(temp_path, dest.as_ref())?;
+    tracing::info!("Saved SRS to {:?}", dest.as_ref());
+    Ok(())
 }
 
 /// The base data directory for the project

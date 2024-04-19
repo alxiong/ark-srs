@@ -56,7 +56,10 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
         bail!("Max degree has to be between [1, 100.8 million].");
     }
     let param_file = match std::env::var("AZTEC_SRS_PATH") {
-        Ok(path) => PathBuf::from(path),
+        Ok(path) => {
+            tracing::info!("Using AZTEC_SRS_PATH {path}");
+            PathBuf::from(path)
+        },
         Err(_) => default_path(None, supported_degree)?,
     };
     setup_helper(supported_degree, param_file)
@@ -68,6 +71,7 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
 fn setup_helper(supported_degree: usize, param_file: PathBuf) -> Result<UniversalParams<Bn254>> {
     // Download SRS file if it doesn't exist
     if !param_file.exists() {
+        tracing::info!("SRS file {param_file:?} does not exist, will download");
         download_srs_file(supported_degree, &param_file).expect("Failed to download SRS file.")
     }
     match load_aztec_srs(supported_degree, param_file) {
