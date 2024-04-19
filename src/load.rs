@@ -56,7 +56,9 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
 
 /// The base data directory for the project
 fn get_project_root() -> Result<PathBuf> {
-    Ok(ProjectDirs::from("" /* qualifier */, "alxiong", "ark-srs")
+   // (empty) qualifier, (empty) organization, and application name
+   // see more <https://docs.rs/directories/5.0.1/directories/struct.ProjectDirs.html#method.from>
+    Ok(ProjectDirs::from("", "", "ark-srs")
         .context("Failed to get project root")?
         .data_dir()
         .to_path_buf())
