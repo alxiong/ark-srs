@@ -2,12 +2,11 @@
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
 use alloc::{
-    format,
-    string::{String, ToString},
-    vec::Vec,
+    borrow::ToOwned, format, string::{String, ToString}, vec::Vec
 };
 use anyhow::{anyhow, Context, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
+use ark_std::rand::{distributions::Alphanumeric, Rng as _};
 use directories::ProjectDirs;
 use sha2::{Digest, Sha256};
 use std::{
@@ -50,10 +49,22 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
     );
     let resp = reqwest::blocking::get(url)?;
 
-    // TODO: save to temporary file and atomically rename to prevent issues when
-    // called concurrently.
-    let mut f = File::create(dest)?;
-    Ok(f.write_all(&resp.bytes()?)?)
+    // Download to a temporary file and rename to dest on completion. This
+    // should prevent some errors if this function is called concurrently
+    // because the concurrent operations would happen on different files and the
+    // destination file should never be in an incomplete state.
+    let mut temp_path = dest.as_ref().as_os_str().to_owned();
+    let suffix: String = ark_std::test_rng()
+        .sample_iter(&Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+    temp_path.push(format!(".temp.{suffix}"));
+    {
+        let mut f = File::create(&temp_path)?;
+        f.write_all(&resp.bytes()?)?;
+    }
+    Ok(std::fs::rename(temp_path, dest.as_ref())?)
 }
 
 /// The base data directory for the project
