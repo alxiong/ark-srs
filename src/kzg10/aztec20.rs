@@ -14,12 +14,13 @@ use ark_std::{
     format,
     fs::File,
     io::{Read, Seek, SeekFrom},
+    iterable::Iterable,
     vec,
     vec::Vec,
 };
 
 use crate::{
-    constants::AZTEC20_DIR,
+    constants::{self, AZTEC20_DIR},
     load::{
         download_srs_file,
         kzg10::bn254::aztec::{default_path, degree_to_basename, load_aztec_srs},
@@ -60,7 +61,25 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
             tracing::info!("Using AZTEC_SRS_PATH {path}");
             PathBuf::from(path)
         },
-        Err(_) => default_path(None, supported_degree)?,
+        Err(_) => {
+            // By default, we pre-serialized a few common degrees but may not be *exactly*
+            // `supported_degree` requested, thus attempts to download the corresponding
+            // parameter files will fail. Thus, we try to find the next higher one than
+            // requested instead.
+            let supported: Vec<usize> = constants::AZTEC20_CHECKSUMS
+                .iter()
+                .map(|(d, _)| d)
+                .collect();
+            let next_higher_degree =
+                match supported.iter().filter(|d| **d >= supported_degree).min() {
+                    Some(d) => *d,
+                    None => bail!("Pre-serialized supported degrees: {:?}", supported),
+                };
+
+            let path = default_path(None, next_higher_degree)?;
+            tracing::info!("Using {}", path.display());
+            path
+        },
     };
     setup_helper(supported_degree, param_file)
 }
@@ -320,7 +339,7 @@ mod test {
     }
 
     #[test]
-    fn test_aztec_crs() -> Result<()> {
+    fn test_srs_correctness() -> Result<()> {
         let rng = &mut ark_std::test_rng();
         dotenv().ok();
 
@@ -351,7 +370,7 @@ mod test {
     }
 
     #[test]
-    fn test_aztec_srs_download() {
+    fn test_srs_download() {
         // Create a temporary project root
         let degree = 1024;
         let tempdir = tempfile::tempdir().unwrap();
