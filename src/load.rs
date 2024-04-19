@@ -1,11 +1,22 @@
 //! Utils for persisting serialized data to files and loading them into memroy.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
-use alloc::{format, vec::Vec};
-use anyhow::{anyhow, Result};
+use alloc::{
+    borrow::ToOwned,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+use anyhow::{anyhow, Context, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
+use ark_std::rand::{distributions::Alphanumeric, Rng as _};
+use directories::ProjectDirs;
 use sha2::{Digest, Sha256};
-use std::{env, fs::File, io::BufReader, path::PathBuf};
+use std::{
+    fs::{self, create_dir_all, File},
+    io::BufReader,
+    path::{Path, PathBuf},
+};
 
 /// store any serializable data into `dest`.
 pub fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
@@ -26,17 +37,50 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     Ok(T::deserialize_uncompressed_unchecked(&bytes[..])?)
 }
 
-/// return the directory containing the Cargo.toml (i.e. current project root)
-pub fn get_project_root() -> Result<PathBuf> {
-    let mut path = env::current_exe()?;
-    // move up one level and start searching for `Cargo.toml` file
-    path.pop();
-    while !path.join("Cargo.toml").exists() {
-        if !path.pop() {
-            return Err(anyhow!("Not running in a cargo project."));
-        }
+/// Download srs file and save to disk
+///
+/// - `basename`: the filename used in download URL
+/// - `dest`: the filename for local cache
+pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
+    // Ensure download directory exists
+    create_dir_all(dest.as_ref().parent().context("no parent dir")?)
+        .context("Unable to create directory")?;
+
+    let version = "0.2.0"; // TODO infer or make configurable
+    let url = format!(
+        "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
+    );
+    tracing::info!("Downloading SRS from {url}");
+    let resp = reqwest::blocking::get(url)?;
+
+    // Download to a temporary file and rename to dest on completion. This
+    // should prevent some errors if this function is called concurrently
+    // because the concurrent operations would happen on different files and the
+    // destination file should never be in an incomplete state.
+    let mut temp_path = dest.as_ref().as_os_str().to_owned();
+    let suffix: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(16)
+        .map(char::from)
+        .collect();
+    temp_path.push(format!(".temp.{suffix}"));
+    {
+        let mut f = File::create(&temp_path)?;
+        f.write_all(&resp.bytes()?)?;
     }
-    Ok(path)
+    std::fs::rename(temp_path, dest.as_ref())?;
+    tracing::info!("Saved SRS to {:?}", dest.as_ref());
+    Ok(())
+}
+
+/// The base data directory for the project
+fn get_project_root() -> Result<PathBuf> {
+    // (empty) qualifier, (empty) organization, and application name
+    // see more <https://docs.rs/directories/5.0.1/directories/struct.ProjectDirs.html#method.from>
+    Ok(ProjectDirs::from("", "", "ark-srs")
+        .context("Failed to get project root")?
+        .data_dir()
+        .to_path_buf())
 }
 
 /// loading KZG10 parameters from files
@@ -56,13 +100,20 @@ pub mod kzg10 {
             use super::*;
 
             /// Returns the default path for pre-serialized param files
-            pub fn default_path(degree: usize) -> Result<PathBuf> {
-                let mut path = get_project_root()?;
-                path.push("data");
+            pub fn default_path(project_root: Option<PathBuf>, degree: usize) -> Result<PathBuf> {
+                let mut path = if let Some(root) = project_root {
+                    root
+                } else {
+                    get_project_root()?
+                };
                 path.push("aztec20");
-                path.push(format!("kzg10-aztec20-srs-{}", degree));
+                path.push(degree_to_basename(degree));
                 path.set_extension("bin");
                 Ok(path)
+            }
+
+            pub(crate) fn degree_to_basename(degree: usize) -> String {
+                format!("kzg10-aztec20-srs-{degree}.bin").to_string()
             }
 
             /// Load SRS from Aztec's ignition ceremony from files.
@@ -99,7 +150,9 @@ pub mod kzg10 {
                     .iter()
                     .any(|(d, cksum)| *d == f_degree && checksum == *cksum)
                 {
-                    return Err(anyhow!("checksum mismatched!"));
+                    tracing::error!("Checksum failed, removing {}", src.display());
+                    fs::remove_file(src)?;
+                    return Err(anyhow!("Checksum failed!"));
                 }
 
                 let mut srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(

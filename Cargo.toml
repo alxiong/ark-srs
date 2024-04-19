@@ -1,6 +1,6 @@
 [package]
 name = "ark-srs"
-version = "0.2.0"
+version = "0.3.0"
 description = "A utility crate that simplifies reuse of Common/Structured Reference String (CRS/SRS) from past trusted setup ceremonies, especially for SNARK"
 authors = ["Alex Xiong <alex.xiong.tech@gmail.com>"]
 edition = "2021"
@@ -23,12 +23,18 @@ ark-ff = "0.4.2"
 ark-poly-commit = "0.4.0"
 ark-serialize = "0.4.2"
 ark-std = "0.4.0"
+directories = "5.0.1"
 hex-literal = "0.4.1"
+rand = "0.8.5"
+reqwest = { version = "0.12.3", features = ["blocking"] }
 sha2 = "0.10.8"
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-subscriber = "0.3.18"
 
 [dev-dependencies]
 ark-poly = "0.4.2"
 dotenv = "0.15.0"
+tempfile = "3.10.1"
 
 [features]
 std = []

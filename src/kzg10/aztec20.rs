@@ -14,13 +14,17 @@ use ark_std::{
     format,
     fs::File,
     io::{Read, Seek, SeekFrom},
+    iterable::Iterable,
     vec,
     vec::Vec,
 };
 
 use crate::{
-    constants::AZTEC20_DIR,
-    load::kzg10::bn254::aztec::{default_path, load_aztec_srs},
+    constants::{self, AZTEC20_DIR},
+    load::{
+        download_srs_file,
+        kzg10::bn254::aztec::{default_path, load_aztec_srs},
+    },
 };
 
 const NUM_TRANSCRIPTS: usize = 20;
@@ -53,9 +57,50 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
         bail!("Max degree has to be between [1, 100.8 million].");
     }
     let param_file = match std::env::var("AZTEC_SRS_PATH") {
-        Ok(path) => PathBuf::from(path),
-        Err(_) => default_path(supported_degree)?,
+        Ok(path) => {
+            tracing::info!("Using AZTEC_SRS_PATH {path}");
+            PathBuf::from(path)
+        },
+        Err(_) => {
+            // By default, we pre-serialized a few common degrees but may not be *exactly*
+            // `supported_degree` requested, thus attempts to download the corresponding
+            // parameter files will fail. Thus, we try to find the next higher one than
+            // requested instead.
+            let supported: Vec<usize> = constants::AZTEC20_CHECKSUMS
+                .iter()
+                .map(|(d, _)| d)
+                .collect();
+            let next_higher_degree =
+                match supported.iter().filter(|d| **d >= supported_degree).min() {
+                    Some(d) => *d,
+                    None => bail!("Pre-serialized supported degrees: {:?}", supported),
+                };
+            tracing::info!("Requested degree {supported_degree} using next higher available degree {next_higher_degree}");
+            default_path(None, next_higher_degree)?
+        },
     };
+    setup_helper(supported_degree, param_file)
+}
+
+// Setup helper to allow passing param_file for tests because setting
+// environment variables is prone to errors because they are shared by all the
+// tests.
+fn setup_helper(supported_degree: usize, param_file: PathBuf) -> Result<UniversalParams<Bn254>> {
+    // Download SRS file if it doesn't exist
+    if !param_file.exists() {
+        tracing::info!("SRS file {param_file:?} does not exist");
+        download_srs_file(
+            param_file
+                .file_name()
+                .expect("Failed to get basename")
+                .to_str()
+                .expect("Basename is invalid str"),
+            &param_file,
+        )
+        .expect("Failed to download SRS file.")
+    } else {
+        tracing::info!("SRS file already exists.");
+    }
     match load_aztec_srs(supported_degree, param_file) {
         Ok(pp) => Ok(pp),
         Err(e) => bail!("Pre-serialized params not found, either download from released assets or use `setup_from_raw()`: {}", e)
@@ -301,7 +346,7 @@ mod test {
     }
 
     #[test]
-    fn test_aztec_crs() -> Result<()> {
+    fn test_srs_correctness() -> Result<()> {
         let rng = &mut ark_std::test_rng();
         dotenv().ok();
 
@@ -329,5 +374,23 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_srs_download() {
+        // Create a temporary project root
+        let degree = 1024;
+        let tempdir = tempfile::tempdir().unwrap();
+        let path = default_path(Some(tempdir.path().to_path_buf()), degree).unwrap();
+
+        assert!(!path.exists());
+
+        // Setup works if the file is not cached.
+        setup_helper(degree, path.clone()).unwrap();
+
+        assert!(path.exists());
+
+        // Setup works if the file is cached.
+        setup_helper(degree, path).unwrap();
     }
 }
