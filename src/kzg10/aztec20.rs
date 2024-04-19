@@ -20,7 +20,10 @@ use ark_std::{
 
 use crate::{
     constants::AZTEC20_DIR,
-    load::kzg10::bn254::aztec::{default_path, load_aztec_srs},
+    load::{
+        download_srs_file,
+        kzg10::bn254::aztec::{default_path, load_aztec_srs},
+    },
 };
 
 const NUM_TRANSCRIPTS: usize = 20;
@@ -56,6 +59,10 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
         Ok(path) => PathBuf::from(path),
         Err(_) => default_path(supported_degree)?,
     };
+    // Download SRS file if it doesn't exist
+    if !param_file.exists() {
+        download_srs_file(supported_degree, &param_file).expect("Failed to download SRS file.")
+    }
     match load_aztec_srs(supported_degree, param_file) {
         Ok(pp) => Ok(pp),
         Err(e) => bail!("Pre-serialized params not found, either download from released assets or use `setup_from_raw()`: {}", e)
@@ -222,6 +229,7 @@ mod test {
     };
     use ark_std::ops::Div;
     use dotenv::dotenv;
+    use std::env;
 
     // simplify from arkworks' poly-commit
     pub fn open<'c, E, P>(
@@ -329,5 +337,18 @@ mod test {
         }
 
         Ok(())
+    }
+
+    #[test]
+    fn test_aztec_srs_download() {
+        // Create a temporary HOME directory
+        let tempdir = tempfile::tempdir().unwrap();
+        env::set_var("HOME", tempdir.path());
+
+        // Setup works if the file is not cached.
+        setup(16392).unwrap();
+
+        // Setup works if the file is cached.
+        setup(16392).unwrap();
     }
 }

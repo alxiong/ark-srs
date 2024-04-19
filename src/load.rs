@@ -1,11 +1,20 @@
 //! Utils for persisting serialized data to files and loading them into memroy.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
-use alloc::{format, vec::Vec};
-use anyhow::{anyhow, Result};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
+use anyhow::{anyhow, Context, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
+use directories::ProjectDirs;
 use sha2::{Digest, Sha256};
-use std::{env, fs::File, io::BufReader, path::PathBuf};
+use std::{
+    fs::{create_dir_all, File},
+    io::BufReader,
+    path::{Path, PathBuf},
+};
 
 /// store any serializable data into `dest`.
 pub fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
@@ -26,17 +35,48 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     Ok(T::deserialize_uncompressed_unchecked(&bytes[..])?)
 }
 
-/// return the directory containing the Cargo.toml (i.e. current project root)
+/// Download srs file and save to disk
+pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
+    // Ensure download directory exists
+    create_dir_all(dest.as_ref().parent().context("no parent dir")?)
+        .context("Unable to create directory")?;
+
+    let version = "0.2.0"; // TODO infer or make configurable
+    let basename = degree_to_basename(degree);
+    let url = format!(
+        "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
+    );
+    let resp = reqwest::blocking::get(url)?;
+
+    // TODO: save to temporary file and atomically rename to prevent issues when
+    // called concurrently.
+    let mut f = File::create(dest)?;
+    Ok(f.write_all(&resp.bytes()?)?)
+}
+
+/// The base data directory for the project
 pub fn get_project_root() -> Result<PathBuf> {
-    let mut path = env::current_exe()?;
-    // move up one level and start searching for `Cargo.toml` file
-    path.pop();
-    while !path.join("Cargo.toml").exists() {
-        if !path.pop() {
-            return Err(anyhow!("Not running in a cargo project."));
-        }
-    }
-    Ok(path)
+    Ok(ProjectDirs::from("" /* qualifier */, "alxiong", "ark-srs")
+        .context("Failed to get project root")?
+        .data_dir()
+        .to_path_buf())
+}
+
+fn degree_to_basename(degree: usize) -> String {
+    format!("kzg10-aztec20-srs-{degree}.bin").to_string()
+}
+
+fn degree_from_filepath(src: impl AsRef<Path>) -> usize {
+    src.as_ref()
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .rsplit_once('-')
+        .expect("unconventional filename")
+        .1
+        .parse::<usize>()
+        .expect("fail to parse to uint")
 }
 
 /// loading KZG10 parameters from files
@@ -58,9 +98,8 @@ pub mod kzg10 {
             /// Returns the default path for pre-serialized param files
             pub fn default_path(degree: usize) -> Result<PathBuf> {
                 let mut path = get_project_root()?;
-                path.push("data");
                 path.push("aztec20");
-                path.push(format!("kzg10-aztec20-srs-{}", degree));
+                path.push(degree_to_basename(degree));
                 path.set_extension("bin");
                 Ok(path)
             }
@@ -80,16 +119,7 @@ pub mod kzg10 {
                 let mut f = File::open(&src).map_err(|_| anyhow!("{} not found", src.display()))?;
                 // the max degree of the param file supported, parsed from file name
                 // getting the 1024 out of `data/aztec20/kzg10-aztec20-srs-1024.bin`
-                let f_degree = src
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .rsplit_once('-')
-                    .expect("unconventional filename")
-                    .1
-                    .parse::<usize>()
-                    .expect("fail to parse to uint");
+                let f_degree = degree_from_filepath(src);
 
                 let mut bytes = Vec::new();
                 f.read_to_end(&mut bytes)?;
