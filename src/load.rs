@@ -13,7 +13,7 @@ use ark_std::rand::{distributions::Alphanumeric, Rng as _};
 use directories::ProjectDirs;
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{create_dir_all, File},
+    fs::{self, create_dir_all, File},
     io::BufReader,
     path::{Path, PathBuf},
 };
@@ -147,7 +147,9 @@ pub mod kzg10 {
                     .iter()
                     .any(|(d, cksum)| *d == f_degree && checksum == *cksum)
                 {
-                    return Err(anyhow!("checksum mismatched!"));
+                    tracing::error!("Checksum failed, removing {}", src.display());
+                    fs::remove_file(src)?;
+                    return Err(anyhow!("Checksum failed!"));
                 }
 
                 let mut srs = kzg10::UniversalParams::<Bn254>::deserialize_uncompressed_unchecked(
