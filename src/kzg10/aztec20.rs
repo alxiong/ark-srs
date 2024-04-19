@@ -65,10 +65,7 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
 // Setup helper to allow passing param_file for tests because setting
 // environment variables is prone to errors because they are shared by all the
 // tests.
-fn setup_helper(
-    supported_degree: usize,
-    param_file: PathBuf,
-) -> Result<UniversalParams<Bn254>> {
+fn setup_helper(supported_degree: usize, param_file: PathBuf) -> Result<UniversalParams<Bn254>> {
     // Download SRS file if it doesn't exist
     if !param_file.exists() {
         download_srs_file(supported_degree, &param_file).expect("Failed to download SRS file.")
@@ -365,5 +362,4 @@ mod test {
         // Setup works if the file is cached.
         setup_helper(degree, path).unwrap();
     }
-
 }

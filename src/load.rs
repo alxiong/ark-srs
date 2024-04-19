@@ -16,6 +16,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use self::kzg10::bn254::aztec::degree_to_basename;
+
 /// store any serializable data into `dest`.
 pub fn store_data<T: CanonicalSerialize>(data: T, dest: PathBuf) -> Result<()> {
     let mut f = File::create(dest)?;
@@ -56,29 +58,12 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
 
 /// The base data directory for the project
 fn get_project_root() -> Result<PathBuf> {
-   // (empty) qualifier, (empty) organization, and application name
-   // see more <https://docs.rs/directories/5.0.1/directories/struct.ProjectDirs.html#method.from>
+    // (empty) qualifier, (empty) organization, and application name
+    // see more <https://docs.rs/directories/5.0.1/directories/struct.ProjectDirs.html#method.from>
     Ok(ProjectDirs::from("", "", "ark-srs")
         .context("Failed to get project root")?
         .data_dir()
         .to_path_buf())
-}
-
-pub(crate) fn degree_to_basename(degree: usize) -> String {
-    format!("kzg10-aztec20-srs-{degree}.bin").to_string()
-}
-
-fn degree_from_filepath(src: impl AsRef<Path>) -> usize {
-    src.as_ref()
-        .file_stem()
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .rsplit_once('-')
-        .expect("unconventional filename")
-        .1
-        .parse::<usize>()
-        .expect("fail to parse to uint")
 }
 
 /// loading KZG10 parameters from files
@@ -110,6 +95,10 @@ pub mod kzg10 {
                 Ok(path)
             }
 
+            pub(crate) fn degree_to_basename(degree: usize) -> String {
+                format!("kzg10-aztec20-srs-{degree}.bin").to_string()
+            }
+
             /// Load SRS from Aztec's ignition ceremony from files.
             ///
             /// # Note
@@ -125,7 +114,16 @@ pub mod kzg10 {
                 let mut f = File::open(&src).map_err(|_| anyhow!("{} not found", src.display()))?;
                 // the max degree of the param file supported, parsed from file name
                 // getting the 1024 out of `data/aztec20/kzg10-aztec20-srs-1024.bin`
-                let f_degree = degree_from_filepath(src);
+                let f_degree = src
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .rsplit_once('-')
+                    .expect("unconventional filename")
+                    .1
+                    .parse::<usize>()
+                    .expect("fail to parse to uint");
 
                 let mut bytes = Vec::new();
                 f.read_to_end(&mut bytes)?;
