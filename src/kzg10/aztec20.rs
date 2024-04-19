@@ -57,8 +57,18 @@ pub fn setup(supported_degree: usize) -> Result<UniversalParams<Bn254>> {
     }
     let param_file = match std::env::var("AZTEC_SRS_PATH") {
         Ok(path) => PathBuf::from(path),
-        Err(_) => default_path(supported_degree)?,
+        Err(_) => default_path(None, supported_degree)?,
     };
+    setup_helper(supported_degree, param_file)
+}
+
+// Setup helper to allow passing param_file for tests because setting
+// environment variables is prone to errors because they are shared by all the
+// tests.
+fn setup_helper(
+    supported_degree: usize,
+    param_file: PathBuf,
+) -> Result<UniversalParams<Bn254>> {
     // Download SRS file if it doesn't exist
     if !param_file.exists() {
         download_srs_file(supported_degree, &param_file).expect("Failed to download SRS file.")
@@ -229,7 +239,6 @@ mod test {
     };
     use ark_std::ops::Div;
     use dotenv::dotenv;
-    use std::env;
 
     // simplify from arkworks' poly-commit
     pub fn open<'c, E, P>(
@@ -341,14 +350,20 @@ mod test {
 
     #[test]
     fn test_aztec_srs_download() {
-        // Create a temporary HOME directory
+        // Create a temporary project root
+        let degree = 1024;
         let tempdir = tempfile::tempdir().unwrap();
-        env::set_var("HOME", tempdir.path());
+        let path = default_path(Some(tempdir.path().to_path_buf()), degree).unwrap();
+
+        assert!(!path.exists());
 
         // Setup works if the file is not cached.
-        setup(16392).unwrap();
+        setup_helper(degree, path.clone()).unwrap();
+
+        assert!(path.exists());
 
         // Setup works if the file is cached.
-        setup(16392).unwrap();
+        setup_helper(degree, path).unwrap();
     }
+
 }

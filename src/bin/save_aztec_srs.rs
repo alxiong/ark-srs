@@ -15,7 +15,7 @@ fn main() {
         print!(" done.\n");
         srs.powers_of_g.truncate(degree + 1);
 
-        let dest = ark_srs::load::kzg10::bn254::aztec::default_path(degree).unwrap();
+        let dest = ark_srs::load::kzg10::bn254::aztec::default_path(None, degree).unwrap();
         print!("Saving to {} ...", dest.display());
         ark_srs::load::store_data(srs, dest).unwrap();
         print!(" done.\n");

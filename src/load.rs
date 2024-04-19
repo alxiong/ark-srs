@@ -55,14 +55,14 @@ pub fn download_srs_file(degree: usize, dest: impl AsRef<Path>) -> Result<()> {
 }
 
 /// The base data directory for the project
-pub fn get_project_root() -> Result<PathBuf> {
+fn get_project_root() -> Result<PathBuf> {
     Ok(ProjectDirs::from("" /* qualifier */, "alxiong", "ark-srs")
         .context("Failed to get project root")?
         .data_dir()
         .to_path_buf())
 }
 
-fn degree_to_basename(degree: usize) -> String {
+pub(crate) fn degree_to_basename(degree: usize) -> String {
     format!("kzg10-aztec20-srs-{degree}.bin").to_string()
 }
 
@@ -96,8 +96,12 @@ pub mod kzg10 {
             use super::*;
 
             /// Returns the default path for pre-serialized param files
-            pub fn default_path(degree: usize) -> Result<PathBuf> {
-                let mut path = get_project_root()?;
+            pub fn default_path(project_root: Option<PathBuf>, degree: usize) -> Result<PathBuf> {
+                let mut path = if let Some(root) = project_root {
+                    root
+                } else {
+                    get_project_root()?
+                };
                 path.push("aztec20");
                 path.push(degree_to_basename(degree));
                 path.set_extension("bin");
