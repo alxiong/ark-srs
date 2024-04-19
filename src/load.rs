@@ -38,6 +38,9 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
 }
 
 /// Download srs file and save to disk
+///
+/// - `basename`: the filename used in download URL
+/// - `dest`: the filename for local cache
 pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
     // Ensure download directory exists
     create_dir_all(dest.as_ref().parent().context("no parent dir")?)
