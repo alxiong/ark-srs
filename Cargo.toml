@@ -1,6 +1,6 @@
 [package]
 name = "ark-srs"
-version = "0.3.1"
+version = "0.3.2"
 description = "A utility crate that simplifies reuse of Common/Structured Reference String (CRS/SRS) from past trusted setup ceremonies, especially for SNARK"
 authors = ["Alex Xiong <alex.xiong.tech@gmail.com>"]
 edition = "2021"
