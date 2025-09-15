@@ -52,7 +52,10 @@ pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
     );
     tracing::info!("Downloading SRS from {url}");
     let mut buf: Vec<u8> = Vec::new();
-    ureq::get(&url).call()?.into_reader().read_to_end(&mut buf)?;
+    ureq::get(&url)
+        .call()?
+        .into_reader()
+        .read_to_end(&mut buf)?;
 
     // Download to a temporary file and rename to dest on completion. This
     // should prevent some errors if this function is called concurrently
