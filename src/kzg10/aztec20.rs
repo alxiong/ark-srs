@@ -263,7 +263,7 @@ mod test {
     use ark_poly::{univariate::DensePolynomial, DenseUVPolynomial, Polynomial};
     use ark_poly_commit::{
         kzg10::{Powers, Proof, Randomness, VerifierKey, KZG10},
-        PCRandomness,
+        PCCommitmentState,
     };
     use ark_std::ops::Div;
     use dotenv::dotenv;
@@ -297,7 +297,7 @@ mod test {
 
         let w = <E::G1 as VariableBaseMSM>::msm_bigint(
             &powers.powers_of_g[num_leading_zeros..],
-            &witness_coeffs,
+            witness_coeffs.as_ref(),
         );
         Ok(Proof {
             w: w.into_affine(),
@@ -309,9 +309,9 @@ mod test {
     /// polynomials `d` should be less that `pp.max_degree()`.
     /// Modify from <https://github.com/arkworks-rs/poly-commit/blob/master/poly-commit/src/kzg10/mod.rs#L512>
     fn trim<E: Pairing>(
-        pp: &UniversalParams<E>,
+        pp: &'_ UniversalParams<E>,
         mut supported_degree: usize,
-    ) -> Result<(Powers<E>, VerifierKey<E>)> {
+    ) -> Result<(Powers<'_, E>, VerifierKey<E>)> {
         if supported_degree == 1 {
             supported_degree += 1;
         }
