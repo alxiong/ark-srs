@@ -1,21 +1,18 @@
 //! Utils for persisting serialized data to files and loading them into memroy.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
-use alloc::{
-    borrow::ToOwned,
-    format,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
 use anyhow::{anyhow, Context, Result};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Read, Write};
-use ark_std::rand::{distributions::Alphanumeric, Rng as _};
 use directories::ProjectDirs;
+use fs2::FileExt;
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, create_dir_all, File},
+    fs::{self, create_dir_all, File, OpenOptions},
     io::BufReader,
     path::{Path, PathBuf},
+    thread,
+    time::Duration,
 };
 
 /// store any serializable data into `dest`.
@@ -37,42 +34,75 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     Ok(T::deserialize_uncompressed_unchecked(&bytes[..])?)
 }
 
+pub(crate) fn download_url_to_file(
+    url: &str,
+    dest: &Path,
+    max_retries: usize,
+    base_backoff: Duration,
+) -> Result<()> {
+    create_dir_all(dest.parent().context("no parent dir")?)
+        .context("Unable to create directory")?;
+
+    // .part file serves double duty: temp file for atomic rename and flock
+    // target to deduplicate concurrent downloads. Not truncated on open so a
+    // second opener doesn't clobber an in-progress write. Left on disk after
+    // failure -- harmless, the next caller overwrites it.
+    let part_path = {
+        let mut p = dest.as_os_str().to_owned();
+        p.push(".part");
+        PathBuf::from(p)
+    };
+    let part_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&part_path)?;
+    part_file.lock_exclusive()?;
+
+    // Another thread may have completed the download while we blocked on the lock.
+    if dest.exists() {
+        return Ok(());
+    }
+
+    let mut last_err = None;
+    for attempt in 0..=max_retries {
+        let mut buf: Vec<u8> = Vec::new();
+        match ureq::get(url).call() {
+            Ok(resp) => match resp.into_reader().read_to_end(&mut buf) {
+                Ok(_) if buf.is_empty() => {
+                    last_err = Some(anyhow!("zero-byte response"));
+                },
+                Ok(_) => {
+                    part_file.set_len(0)?;
+                    (&part_file).write_all(&buf)?;
+                    fs::rename(&part_path, dest)?;
+                    return Ok(());
+                },
+                Err(e) => last_err = Some(anyhow::Error::from(e)),
+            },
+            Err(e) => last_err = Some(anyhow::Error::from(e)),
+        }
+
+        if attempt < max_retries {
+            let backoff = base_backoff * 2u32.saturating_pow(attempt as u32);
+            thread::sleep(backoff);
+        }
+    }
+
+    Err(last_err.unwrap_or_else(|| anyhow!("download failed")))
+}
+
 /// Download srs file and save to disk
 ///
 /// - `basename`: the filename used in download URL
 /// - `dest`: the filename for local cache
 pub fn download_srs_file(basename: &str, dest: impl AsRef<Path>) -> Result<()> {
-    // Ensure download directory exists
-    create_dir_all(dest.as_ref().parent().context("no parent dir")?)
-        .context("Unable to create directory")?;
-
     let version = "0.2.0"; // TODO infer or make configurable
     let url = format!(
         "https://github.com/EspressoSystems/ark-srs/releases/download/v{version}/{basename}",
     );
     tracing::info!("Downloading SRS from {url}");
-    let mut buf: Vec<u8> = Vec::new();
-    ureq::get(&url)
-        .call()?
-        .into_reader()
-        .read_to_end(&mut buf)?;
-
-    // Download to a temporary file and rename to dest on completion. This
-    // should prevent some errors if this function is called concurrently
-    // because the concurrent operations would happen on different files and the
-    // destination file should never be in an incomplete state.
-    let mut temp_path = dest.as_ref().as_os_str().to_owned();
-    let suffix: String = rand::thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(16)
-        .map(char::from)
-        .collect();
-    temp_path.push(format!(".temp.{suffix}"));
-    {
-        let mut f = File::create(&temp_path)?;
-        f.write_all(&buf)?;
-    }
-    std::fs::rename(temp_path, dest.as_ref())?;
+    download_url_to_file(&url, dest.as_ref(), 5, Duration::from_secs(1))?;
     tracing::info!("Saved SRS to {:?}", dest.as_ref());
     Ok(())
 }
@@ -117,7 +147,7 @@ pub mod kzg10 {
             }
 
             pub(crate) fn degree_to_basename(degree: usize) -> String {
-                format!("kzg10-aztec20-srs-{degree}.bin").to_string()
+                format!("kzg10-aztec20-srs-{degree}.bin")
             }
 
             /// Load SRS from Aztec's ignition ceremony from files.
@@ -168,5 +198,173 @@ pub mod kzg10 {
                 Ok(srs)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn test_download_success() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_body("hello")
+            .expect(1)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let url = format!("{}/file.bin", server.url());
+
+        download_url_to_file(&url, &dest, 0, Duration::from_millis(10)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "hello");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_retry_succeeds_after_transient_failures() {
+        let mut server = mockito::Server::new();
+        let _fallback = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_body("ok")
+            .create();
+        let _failures = server
+            .mock("GET", "/file.bin")
+            .with_status(500)
+            .expect(2)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let url = format!("{}/file.bin", server.url());
+
+        download_url_to_file(&url, &dest, 2, Duration::from_millis(10)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_retry_exhausted_returns_error() {
+        let mut server = mockito::Server::new();
+        let _mock = server
+            .mock("GET", "/file.bin")
+            .with_status(500)
+            .expect(3)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let url = format!("{}/file.bin", server.url());
+
+        let result = download_url_to_file(&url, &dest, 2, Duration::from_millis(10));
+
+        assert!(result.is_err());
+        assert!(!dest.exists());
+    }
+
+    #[test]
+    fn test_concurrent_downloads_deduplicated() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_body("concurrent")
+            .expect(1)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let url = format!("{}/file.bin", server.url());
+
+        let barrier = Arc::new(Barrier::new(5));
+        let handles: Vec<_> = (0..5)
+            .map(|_| {
+                let barrier = Arc::clone(&barrier);
+                let url = url.clone();
+                let dest = dest.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    download_url_to_file(&url, &dest, 0, Duration::from_millis(10))
+                })
+            })
+            .collect();
+
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "concurrent");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_existing_file_skipped_under_lock() {
+        let mut server = mockito::Server::new();
+        let mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .expect(0)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        std::fs::write(&dest, "existing").unwrap();
+
+        let url = format!("{}/file.bin", server.url());
+
+        download_url_to_file(&url, &dest, 0, Duration::from_millis(10)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "existing");
+        mock.assert();
+    }
+
+    #[test]
+    fn test_part_file_cleaned_up_on_success() {
+        let mut server = mockito::Server::new();
+        let _mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_body("data")
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+        let url = format!("{}/file.bin", server.url());
+
+        download_url_to_file(&url, &dest, 0, Duration::from_millis(10)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "data");
+        let mut part_path = dest.as_os_str().to_owned();
+        part_path.push(".part");
+        assert!(!PathBuf::from(part_path).exists());
+    }
+
+    #[test]
+    fn test_stale_part_file_does_not_prevent_download() {
+        let mut server = mockito::Server::new();
+        let _mock = server
+            .mock("GET", "/file.bin")
+            .with_status(200)
+            .with_body("fresh")
+            .expect(1)
+            .create();
+
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("file.bin");
+
+        let mut part_path = dest.as_os_str().to_owned();
+        part_path.push(".part");
+        std::fs::write(PathBuf::from(&part_path), "stale data").unwrap();
+
+        let url = format!("{}/file.bin", server.url());
+        download_url_to_file(&url, &dest, 0, Duration::from_millis(10)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "fresh");
     }
 }
