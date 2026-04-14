@@ -1,4 +1,4 @@
-//! Utils for persisting serialized data to files and loading them into memroy.
+//! Utils for persisting serialized data to files and loading them into memory.
 //! We deal with `ark-serialize::CanonicalSerialize` compatible objects.
 
 use alloc::{borrow::ToOwned, format, string::String, vec::Vec};
@@ -34,12 +34,24 @@ pub fn load_data<T: CanonicalDeserialize>(src: PathBuf) -> Result<T> {
     Ok(T::deserialize_uncompressed_unchecked(&bytes[..])?)
 }
 
+/// Download `url` to `dest` with retry, exponential backoff, and
+/// concurrent-download deduplication via file locking.
+///
+/// A `.part` file is used as both a temporary staging file and an `flock`
+/// target so that multiple threads/processes downloading the same `dest`
+/// are serialised: only the first caller performs the actual download while
+/// the rest block on the lock and return once the file appears.
 pub(crate) fn download_url_to_file(
     url: &str,
     dest: &Path,
     max_retries: usize,
     base_backoff: Duration,
 ) -> Result<()> {
+    // Fast path: if the destination already exists, skip everything.
+    if dest.exists() {
+        return Ok(());
+    }
+
     create_dir_all(dest.parent().context("no parent dir")?)
         .context("Unable to create directory")?;
 
@@ -64,21 +76,29 @@ pub(crate) fn download_url_to_file(
         return Ok(());
     }
 
+    // Use an agent with explicit timeouts so a hung connection cannot hold the
+    // exclusive lock indefinitely.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(30))
+        .timeout_read(Duration::from_secs(300))
+        .build();
+
     let mut last_err = None;
     for attempt in 0..=max_retries {
-        let mut buf: Vec<u8> = Vec::new();
-        match ureq::get(url).call() {
-            Ok(resp) => match resp.into_reader().read_to_end(&mut buf) {
-                Ok(_) if buf.is_empty() => {
+        match agent.get(url).call() {
+            Ok(resp) => {
+                // Stream the response directly into the .part file to keep
+                // memory usage bounded for large SRS assets.
+                part_file.set_len(0)?;
+                use std::io::Seek;
+                (&part_file).seek(std::io::SeekFrom::Start(0))?;
+                let bytes_copied = std::io::copy(&mut resp.into_reader(), &mut &part_file)?;
+                if bytes_copied == 0 {
                     last_err = Some(anyhow!("zero-byte response"));
-                },
-                Ok(_) => {
-                    part_file.set_len(0)?;
-                    (&part_file).write_all(&buf)?;
+                } else {
                     fs::rename(&part_path, dest)?;
                     return Ok(());
-                },
-                Err(e) => last_err = Some(anyhow::Error::from(e)),
+                }
             },
             Err(e) => last_err = Some(anyhow::Error::from(e)),
         }
