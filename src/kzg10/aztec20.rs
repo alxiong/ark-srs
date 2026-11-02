@@ -339,7 +339,8 @@ mod test {
         while num_leading_zeros < p.coeffs().len() && p.coeffs()[num_leading_zeros].is_zero() {
             num_leading_zeros += 1;
         }
-        let coeffs = ark_std::cfg_iter!(&p.coeffs()[num_leading_zeros..])
+        let coeffs = p.coeffs()[num_leading_zeros..]
+            .iter()
             .map(|s| s.into_bigint())
             .collect::<Vec<_>>();
         (num_leading_zeros, coeffs)
