@@ -34,7 +34,7 @@ ureq = "2.9.6"
 
 [dev-dependencies]
 ark-poly = "0.6"
-dotenv = "0.15.0"
+dotenvy = "0.15.7"
 mockito = "1.7.2"
 tempfile = "3.10.1"
 

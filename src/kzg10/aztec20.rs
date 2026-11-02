@@ -48,7 +48,7 @@ const NUM_BIGINT_PER_G2: usize = 4;
 /// # Locally cached SRS binary file
 /// we assume you have a local cache of the parameter binary file at
 /// `AZTEC_SRS_PATH` (see `.env` file),
-/// which you can load using `dotenv::dotenv().ok();` or you can use
+/// which you can load using `dotenvy::dotenv().ok();` or you can use
 /// `std::env::set_var("AZTEC_SRS_PATH", YOUR_CUSTOM_PATH)`
 ///
 /// [setup]: https://docs.rs/ark-poly-commit/0.4.0/ark_poly_commit/kzg10/struct.KZG10.html#method.setup
@@ -266,7 +266,7 @@ mod test {
         PCCommitmentState,
     };
     use ark_std::ops::Div;
-    use dotenv::dotenv;
+    use dotenvy::dotenv;
 
     // simplify from arkworks' poly-commit
     pub fn open<'c, E, P>(
